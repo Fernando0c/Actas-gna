@@ -40,7 +40,6 @@
         <header class="text-center mb-6">
             <img src="https://upload.wikimedia.org/wikipedia/commons/2/22/Escudo_de_la_Gendarmer%C3%ADa_Nacional_Argentina.png" alt="Escudo de Gendarmería Nacional Argentina" class="h-24 mx-auto mb-4" onerror="this.style.display='none'">
             <h1 class="text-3xl font-bold text-green-800 dark:text-green-400">Sistema de Actas de Procedimiento</h1>
-            <p class="text-md text-gray-600 dark:text-gray-400">Gendarmería Nacional Argentina</p>
         </header>
         
         <div id="login-view" class="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg max-w-sm mx-auto mb-8">
@@ -124,18 +123,25 @@
     </div>
 
     <script type="module">
+        // Por favor, recuerda pegar aquí tu objeto de configuración de Firebase
+        // const firebaseConfig = { ... };
+        
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, doc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Si no has pegado tu configuración arriba, la app usará una configuración vacía y no funcionará.
+        if (typeof firebaseConfig === 'undefined') {
+            console.error("No se encontró la configuración de Firebase. Pega tu objeto firebaseConfig aquí.");
+            // Una config vacía para evitar que el script se rompa por completo, aunque no funcionará
+            var firebaseConfig = {}; 
+        }
 
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id-infracciones';
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-        setLogLevel('debug');
-
+        
         const appView = document.getElementById('app-view');
         const userIdDisplay = document.getElementById('user-id-display');
         const infraccionForm = document.getElementById('infraccion-form');
@@ -196,13 +202,8 @@
                         marker.setLatLng([latitude, longitude]);
                     }
                     map.bindPopup('Ubicación del procedimiento.').openPopup();
-
-                    // CORRECCIÓN: Forzar la actualización del tamaño del mapa después de que sea visible.
-                    setTimeout(() => {
-                        if (map) {
-                           map.invalidateSize();
-                        }
-                    }, 100);
+                    
+                    setTimeout(() => { if (map) map.invalidateSize(); }, 100);
                 },
                 () => {
                     locationStatus.textContent = 'No se pudo obtener la ubicación. Verifique los permisos.';
@@ -211,7 +212,7 @@
             );
         });
 
-        // --- RESTO DE LÓGICA DE UI ---
+        // --- LÓGICA DE UI DINÁMICA ---
         huboDetenidosCheckbox.addEventListener('change', () => {
             detallesDetenidosDiv.classList.toggle('hidden', !huboDetenidosCheckbox.checked);
             if (huboDetenidosCheckbox.checked && detenidosContainer.children.length === 0) addDetenido();
@@ -370,12 +371,41 @@
 
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    // ... Lógica del modal completa para mostrar los datos
+                    let lugarHtml = `<div class="col-span-2"><strong>Lugar:</strong> ${data.lugar}</div>`;
+                    if(data.latitud && data.longitud) lugarHtml += `<div class="col-span-2 text-xs"><strong>Coordenadas:</strong> ${data.latitud}, ${data.longitud}</div>`;
+                    let articulosHtml = data.articulos?.length ? `<ol class="list-decimal list-inside">${data.articulos.map(a => `<li>${a}</li>`).join('')}</ol>` : '<p>N/A</p>';
+                    let detenidosHtml = '';
+                    if (data.huboDetenidos && data.detenidos?.length) {
+                        const listaDetenidos = data.detenidos.map(d => `<li class="ml-4"><strong>DNI:</strong> ${d.dni} - ${d.nombre}</li>`).join('');
+                        detenidosHtml = `<h3 class="font-bold text-lg mt-6 mb-2 text-blue-600 dark:text-blue-400">III. PERSONAS DETENIDAS</h3><div class="text-sm mb-6 border p-4 rounded-md border-blue-300"><ul class="list-disc list-inside">${listaDetenidos}</ul></div>`;
+                    }
+                    let vehiculosHtml = '';
+                    if (data.huboVehiculosSecuestrados && data.vehiculosSecuestrados?.length) {
+                        const listaVehiculos = data.vehiculosSecuestrados.map(v => `<div class="p-2 border-b"><p><strong>Vehículo:</strong> ${v.marcaModelo} - <strong>Dominio:</strong> ${v.dominio}</p><p class="text-xs"><strong>Chasis:</strong> ${v.chasis || 'N/A'} | <strong>Motor:</strong> ${v.motor || 'N/A'}</p><p class="text-xs"><strong>Motivo:</strong> ${v.motivo || 'N/A'}</p></div>`).join('');
+                        vehiculosHtml = `<h3 class="font-bold text-lg mt-6 mb-2 text-orange-600 dark:text-orange-400">IV. VEHÍCULOS SECUESTRADOS</h3><div class="text-sm mb-6 border p-2 rounded-md border-orange-300">${listaVehiculos}</div>`;
+                    }
+                    let secuestroHtml = '';
+                    if (data.huboSecuestro) {
+                         let avaluoHtml = data.avaluoTotal > 0 ? `<div class="mt-4 border-t pt-3"><h5 class="font-semibold">Avalúo Estimado:</h5><p><strong>Cantidad:</strong> ${data.cantidadSecuestrada || 0} ${data.unidadSecuestrada || ''}</p><p><strong>Valor Unitario:</strong> ${(data.valorUnitario || 0).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' })}</p><p class="font-bold text-green-700"><strong>Total:</strong> ${(data.avaluoTotal || 0).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' })}</p></div>` : '';
+                         secuestroHtml = `<h3 class="font-bold text-lg mt-6 mb-2 text-red-600 dark:text-red-400">V. OTROS ELEMENTOS SECUESTRADOS</h3><div class="text-sm mb-6 border p-4 rounded-md border-red-300"><p><strong>Tipo:</strong> ${data.tipoSecuestro || 'N/A'}</p><p class="mt-2"><strong>Causa/Magistrado:</strong> ${data.causaJudicial || 'N/A'}</p><p class="mt-2"><strong>Descripción:</strong></p><p class="whitespace-pre-wrap p-2 bg-gray-100 rounded mt-1">${data.descripcionSecuestro || 'N/A'}</p>${avaluoHtml}</div>`;
+                    }
+                    let archivosHtml = '';
+                    if (data.archivosMultimedia?.length) {
+                        const listaArchivos = data.archivosMultimedia.map(f => `<li class="ml-4"><i class="fas fa-paperclip mr-2"></i>${f}</li>`).join('');
+                        archivosHtml = `<h3 class="font-bold text-lg mt-6 mb-2">VI. EVIDENCIA ADJUNTA</h3><div class="text-sm mb-6"><ul class="list-none">${listaArchivos}</ul><p class="text-xs mt-2 text-gray-500">(Archivos almacenados en el sistema)</p></div>`;
+                    }
+                    let patrullaHtml = data.patrulla ? `<h4 class="font-semibold mt-4">Integrantes de la Patrulla:</h4><pre class="whitespace-pre-wrap p-2 bg-gray-100 dark:bg-gray-700 rounded mt-1 text-sm">${data.patrulla}</pre>` : '';
                     modalContent.innerHTML = `
                         <h2 class="text-xl font-bold text-center mb-2">ACTA DE PROCEDIMIENTO</h2>
                         <p class="text-center text-lg mb-4 text-gray-700 dark:text-gray-300 font-semibold">${data.caratula || 'Sin Carátula'}</p>
-                        <!-- El resto del contenido del acta se genera aquí dinámicamente -->
-                    `;
+                        <div class="grid grid-cols-2 gap-x-8 gap-y-2 text-sm mb-6 border-t border-b py-4"><div><strong>N° de Acta:</strong> ${docSnap.id}</div><div><strong>Fecha y Hora:</strong> ${new Date(data.fechaHora).toLocaleString('es-AR')}</div>${lugarHtml}</div>
+                        <h3 class="font-bold text-lg mb-2">I. DATOS GENERALES</h3><div class="text-sm mb-6 border-b pb-4"><p><strong>Imputado/Infractor DNI:</strong> ${data.dni}</p><p><strong>Vehículo Involucrado:</strong> ${data.dominio}</p><div class="mt-2"><p><strong>Infracciones/Delitos:</strong></p>${articulosHtml}</div><p class="mt-2"><strong>Descripción del Procedimiento:</strong></p><p class="whitespace-pre-wrap p-2 bg-gray-100 rounded mt-1">${data.descripcion || 'N/A'}</p></div>
+                        <h3 class="font-bold text-lg mb-2 mt-6">II. PERSONAL INTERVINIENTE</h3><div class="text-sm mb-6"><p><strong>Personal a Cargo:</strong> DNI ${data.agenteDNI || 'N/A'}</p><p><strong>Código Estadístico:</strong> ${data.agenteCodigo || 'N/A'}</p>${patrullaHtml}</div>
+                        ${detenidosHtml}
+                        ${vehiculosHtml}
+                        ${secuestroHtml}
+                        ${archivosHtml}
+                        <div class="mt-16 h-px bg-gray-400 w-1/2"></div><p class="mt-1 text-sm">Firma del Personal a Cargo</p>`;
                     modalView.classList.remove('hidden');
                 }
             }
